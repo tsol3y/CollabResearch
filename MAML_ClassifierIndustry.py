@@ -142,7 +142,7 @@ class MAML(object):
             print("Testing Now +_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_")
             YPred = TestModel.predict(XTest[train_end:])
             YPred = [self.classify(pred) for pred in YPred]
-            
+            Y = np.array(YTest, YPred)
             correct = 0
             for index in range(0,test_size):
                 if [YPred[index]] == YTest[train_end+index]: correct += 1
@@ -150,15 +150,16 @@ class MAML(object):
             print("Predicted {}".format(YPred))
             print("Actual {}".format(YTest[train_end:]))
             print("Accuracy {}%\n".format(accuracy))
-            with open('Results/results{}batch{}.csv'.format(self.test_called, i), 'w') as csvfile:
-                filewriter = csv.writer(csvfile, delimiter=',',
-                                quotechar='|', quoting=csv.QUOTE_MINIMAL)
-                filewriter.writerow(['YTest','YPred'])
-                for i in range (len(YPred)):
-                    filewriter.writerow([YTest[train_end+i], YPred[i]])
+            np.savetext('Results/results{}batch{}.csv'.format(self.test_called, i), Y)
+            # with open('Results/results{}batch{}.csv'.format(self.test_called, i), 'w') as csvfile:
+            #     filewriter = csv.writer(csvfile, delimiter=',',
+            #                     quotechar='|', quoting=csv.QUOTE_MINIMAL)
+            #     filewriter.writerow(['YTest','YPred'])
+            #     for i in range (len(YPred)):
+            #         filewriter.writerow([YTest[train_end+i][0], YPred[i]])
             self.test_called += 1  
 
-feat_list = ["Close","Volume"]
+feat_list = ["Close"]
 model = MAML(session = tf.Session(), ld_theta = False, stocks_sector = "fStocks_Sector_CC", columns = feat_list)
 start_time = time.time()
 for i in range(1):
