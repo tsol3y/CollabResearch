@@ -9,26 +9,22 @@ import strawberryfields as sf
 from strawberryfields.ops import *
 from QModel_new import QModel
 import csv
-# li = formatData(li)
-
-# li = getFiles("")
-# dfs = li[:len(li)-6]
-# test = li[len(li)-6:]
-
+import time
 
 
 class MAML(object):
-    def __init__(self, session, ld_theta, stocks_sector):
+    def __init__(self, session, ld_theta, stocks_sector, columns):
         self.test_called = 0
-        self.num_train_samples = 35
-        self.num_meta_samples = 35
+        self.num_train_samples = 10
+        self.num_meta_samples = 10
         self.num_test_samples = 5
-        self.num_features = 2
         self.num_outputs = 1
-        self.num_layers = 2
+        self.num_layers = 1
+        self.col_names = columns
+        self.num_features = len(self.col_names)
 
         #number of epochs i.e training iterations
-        self.epochs = 50
+        self.epochs = 10
         
         #hyperparameter for the inner loop (inner gradient update)
         self.alpha = 0.001
@@ -51,22 +47,41 @@ class MAML(object):
         self.dfs_test = dfs[len(dfs)-6:]
 
     #define our sigmoid activation function 
-    def sample_points(self, df,size):                                         # return sample points with two x (features) and one y
+    # def sample_points(self, df,size):                                         # return sample points with two x (features) and one y
+    #     start = random.randint(0,len(df)-size)
+    #     end = start + size - 1
+    #     x1 = df.loc[start:end, ['Close']]
+    #     x2 = df.loc[start:end, ['Volume']]
+    #     y1 = df.loc[start:end, ['ClassLabel']]
+    #     x1 = np.array(x1.values.tolist())
+    #     y1 = np.array(y1.values.tolist())
+    #     x2 = np.array(x2.values.tolist())
+    #     scaler0 = MinMaxScaler()
+    #     scaler0.fit(x1)
+    #     scaler1 = MinMaxScaler()
+    #     scaler1.fit(x2)
+    #     x = np.array([a for a in zip(scaler0.transform(x1), scaler1.transform(x2))])
+    #     y = y1.reshape(size,1)
+    #     return x,y 
+
+    def sample_points(self, df,size):                                       # return sample points with two x (features) and one y
+        all_Data = []
         start = random.randint(0,len(df)-size)
         end = start + size - 1
-        x1 = df.loc[start:end, ['Close']]
-        x2 = df.loc[start:end, ['Volume']]
+        for i in range(len(self.col_names)):
+            x1= df.loc[start:end, [self.col_names[i]]]
+            x1 = np.array(x1.values.tolist()) 
+            scaler0 = MinMaxScaler()
+            scaler0.fit(x1)
+            x1 = scaler0.transform(x1)
+            all_Data.append(x1)
+        
         y1 = df.loc[start:end, ['ClassLabel']]
-        x1 = np.array(x1.values.tolist())
         y1 = np.array(y1.values.tolist())
-        x2 = np.array(x2.values.tolist())
-        scaler0 = MinMaxScaler()
-        scaler0.fit(x1)
-        scaler1 = MinMaxScaler()
-        scaler1.fit(x2)
-        x = np.array([a for a in zip(scaler0.transform(x1), scaler1.transform(x2))])
+        x = np.array([a for a in zip(*all_Data)])
         y = y1.reshape(size,1)
         return x,y 
+
     def sigmoid(self, a):
         return 1.0 / (1 + np.exp(-a))
     
@@ -117,33 +132,44 @@ class MAML(object):
                 self.theta = self.theta-self.beta*meta_gradient/num_tasks
                 self.saveTheta()
 
-    def test(self, df, sample_size, test_size):   
-        TestModel = QModel(self.sess, self.theta, self.num_features, self.num_outputs, self.num_layers)
-        train_start = 0
-        train_end = train_start + sample_size
-        XTest, YTest = self.sample_points(df,sample_size + test_size)
-        TestModel.fit(XTest[:train_end],YTest[:train_end])
-        print("Testing Now +_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_")
-        YPred = TestModel.predict(XTest[train_end:])
-        YPred = [self.classify(pred) for pred in YPred]
-        
-        correct = 0
-        for index in range(0,test_size):
-            if [YPred[index]] == YTest[train_end+index]: correct += 1
-        accuracy = (correct/self.num_test_samples) * 100
-        print("Predicted {}".format(YPred))
-        print("Actual {}".format(YTest[train_end:]))
-        print("Accuracy {}%\n".format(accuracy))
-        with open('Results/results{}.csv'.format(self.test_called), 'w') as csvfile:
-            filewriter = csv.writer(csvfile, delimiter=',',
-                            quotechar='|', quoting=csv.QUOTE_MINIMAL)
-            filewriter.writerow(['YTest','YPred'])
-            for i in range (len(YPred)):
-                filewriter.writerow([YTest[train_end+i], YPred[i]])
-        self.test_called += 1  
+    def test(self, df, sample_size, test_size, batch_size):   
+        for i in range(batch_size):
+            TestModel = QModel(self.sess, self.theta, self.num_features, self.num_outputs, self.num_layers)
+            train_start = 0
+            train_end = train_start + sample_size
+            XTest, YTest = self.sample_points(df,sample_size + test_size)
+            TestModel.fit(XTest[:train_end],YTest[:train_end])
+            print("Testing Now +_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_+_")
+            YPred = TestModel.predict(XTest[train_end:])
+            YPred = [self.classify(pred) for pred in YPred]
+            
+            correct = 0
+            for index in range(0,test_size):
+                if [YPred[index]] == YTest[train_end+index]: correct += 1
+            accuracy = (correct/self.num_test_samples) * 100
+            print("Predicted {}".format(YPred))
+            print("Actual {}".format(YTest[train_end:]))
+            print("Accuracy {}%\n".format(accuracy))
+            with open('Results/results{}batch{}.csv'.format(self.test_called, i), 'w') as csvfile:
+                filewriter = csv.writer(csvfile, delimiter=',',
+                                quotechar='|', quoting=csv.QUOTE_MINIMAL)
+                filewriter.writerow(['YTest','YPred'])
+                for i in range (len(YPred)):
+                    filewriter.writerow([YTest[train_end+i], YPred[i]])
+            self.test_called += 1  
 
-model = MAML(session = tf.Session(), ld_theta = False, stocks_sector = "fStocks_Sector_CC")
-for i in range(6):
-    model.train(num_tasks = 10)
-    for j in range(len(model.dfs_test)):
-        model.test(df = model.dfs_test[j], sample_size = 20, test_size = 5)
+feat_list = ["Close","Volume"]
+model = MAML(session = tf.Session(), ld_theta = False, stocks_sector = "fStocks_Sector_CC", columns = feat_list)
+start_time = time.time()
+for i in range(1):
+    model.train(num_tasks = 5)
+end_time = time.time()
+run = start_time - end_time
+print("RUN: ", run, " +++++++++++++++++++++++++++++++++++++++++++++++++++++++++")
+
+for i in range(len(model.dfs_test)):
+    model.test(df = model.dfs_test[1], sample_size = 20, test_size = 10, batch_size = 10)
+# for i in range(6):
+#     model.train(num_tasks = 10)
+#     for j in range(len(model.dfs_test)):
+#         model.test(df = model.dfs_test[j], sample_size = 20, test_size = 5)
